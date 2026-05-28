@@ -280,6 +280,91 @@ main {
     font-style: italic;
 }
 
+.tls-validity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.tls-validity.valid {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.tls-validity.invalid {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.tls-validity .validity-icon {
+    font-size: 1.2rem;
+}
+
+.chain-info {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.cert-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    border-left: 4px solid var(--success);
+}
+
+.cert-card.cert-expired {
+    border-left-color: var(--error);
+}
+
+.cert-card .cert-role {
+    padding: 8px 12px;
+    background: #f1f5f9;
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cert-status-tag {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.cert-status-tag.cert-ok {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.cert-status-tag.cert-expired {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.cert-card table {
+    font-size: 0.8rem;
+}
+
+.cert-card table td:first-child {
+    width: 70px;
+}
+
+.mono-small {
+    word-break: break-all;
+    font-family: "SF Mono", Monaco, "Cascadia Mono", monospace;
+    font-size: 0.7rem;
+}
+
 footer {
     text-align: center;
     padding: 24px 0;

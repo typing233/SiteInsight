@@ -1,9 +1,11 @@
 import asyncio
 import ssl
 import socket
+import select
 from typing import Any
 from datetime import datetime, timezone
 
+from OpenSSL import SSL, crypto
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
@@ -15,65 +17,136 @@ async def get_tls_info(hostname: str, port: int = 443) -> dict[str, Any]:
 
 
 def _get_tls_sync(hostname: str, port: int) -> dict[str, Any]:
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = True
-    ctx.verify_mode = ssl.CERT_REQUIRED
+    chain_certs = []
+    valid = True
+    validation_error = ""
+    protocol_version = ""
 
     try:
-        with socket.create_connection((hostname, port), timeout=10) as sock:
-            with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
-                cert_der = ssock.getpeercert(binary_form=True)
-                cert_dict = ssock.getpeercert()
-    except ssl.SSLCertVerificationError as e:
-        ctx_noverify = ssl.create_default_context()
-        ctx_noverify.check_hostname = False
-        ctx_noverify.verify_mode = ssl.CERT_NONE
+        chain_certs, protocol_version = _connect_and_get_chain(hostname, port, verify=True)
+    except SSL.Error as e:
+        valid = False
+        validation_error = str(e)
         try:
-            with socket.create_connection((hostname, port), timeout=10) as sock:
-                with ctx_noverify.wrap_socket(sock, server_hostname=hostname) as ssock:
-                    cert_der = ssock.getpeercert(binary_form=True)
-                    cert_dict = ssock.getpeercert() or {}
-        except Exception:
-            return {"error": f"SSL error: {e}", "valid": False}
-        return _parse_cert(cert_der, cert_dict, valid=False, reason=str(e))
+            chain_certs, protocol_version = _connect_and_get_chain(hostname, port, verify=False)
+        except Exception as e2:
+            return {
+                "valid": False,
+                "validation_error": validation_error,
+                "connection_error": str(e2),
+                "chain": [],
+                "chain_length": 0,
+            }
     except (ConnectionRefusedError, socket.timeout, OSError) as e:
-        return {"error": f"Connection failed: {e}"}
+        raise ConnectionError(f"无法连接到 {hostname}:{port} — {e}")
+    except Exception as e:
+        raise ConnectionError(f"TLS连接失败: {e}")
 
-    return _parse_cert(cert_der, cert_dict, valid=True)
+    chain = []
+    for i, cert_pem in enumerate(chain_certs):
+        parsed = _parse_single_cert(cert_pem, index=i)
+        chain.append(parsed)
+
+    result = {
+        "valid": valid,
+        "chain_length": len(chain),
+        "protocol": protocol_version,
+        "chain": chain,
+    }
+    if validation_error:
+        result["validation_error"] = validation_error
+
+    return result
 
 
-def _parse_cert(cert_der: bytes, cert_dict: dict, valid: bool, reason: str = "") -> dict[str, Any]:
-    result = {"valid": valid}
-    if reason:
-        result["validation_error"] = reason
+def _connect_and_get_chain(hostname: str, port: int, verify: bool) -> tuple[list[bytes], str]:
+    ctx = SSL.Context(SSL.TLS_CLIENT_METHOD)
+
+    if verify:
+        ctx.set_default_verify_paths()
+        ctx.set_verify(SSL.VERIFY_PEER, lambda conn, cert, errno, depth, ok: ok)
+    else:
+        ctx.set_verify(SSL.VERIFY_NONE, lambda *args: True)
+
+    sock = socket.create_connection((hostname, port), timeout=10)
+    sock.setblocking(True)
+    conn = SSL.Connection(ctx, sock)
+    conn.set_tlsext_host_name(hostname.encode())
+    conn.set_connect_state()
 
     try:
-        cert = x509.load_der_x509_certificate(cert_der)
+        for _ in range(10):
+            try:
+                conn.do_handshake()
+                break
+            except SSL.WantReadError:
+                select.select([sock], [], [], 5)
+                continue
+        else:
+            raise ConnectionError("TLS握手超时")
 
-        result["subject"] = _name_to_dict(cert.subject)
-        result["issuer"] = _name_to_dict(cert.issuer)
-        result["serial_number"] = format(cert.serial_number, "x")
-        result["not_before"] = cert.not_valid_before_utc.isoformat()
-        result["not_after"] = cert.not_valid_after_utc.isoformat()
-        result["signature_algorithm"] = cert.signature_algorithm_oid._name
+        chain_certs = []
+        peer_chain = conn.get_peer_cert_chain()
+        if peer_chain:
+            for cert in peer_chain:
+                cert_pem = crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+                chain_certs.append(cert_pem)
 
-        now = datetime.now(timezone.utc)
-        result["expired"] = now > cert.not_valid_after_utc
-        result["not_yet_valid"] = now < cert.not_valid_before_utc
-
+        protocol_version = conn.get_protocol_version_name()
+    finally:
         try:
-            san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
-            result["san"] = san.value.get_values_for_type(x509.DNSName)
-        except x509.ExtensionNotFound:
-            result["san"] = []
+            conn.shutdown()
+        except Exception:
+            pass
+        sock.close()
 
-        if cert.signature_hash_algorithm:
-            result["fingerprint_sha256"] = cert.fingerprint(hashes.SHA256()).hex(":")
+    return chain_certs, protocol_version
+
+
+def _parse_single_cert(cert_pem: bytes, index: int) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem)
     except Exception as e:
-        result["parse_error"] = str(e)
+        return {"index": index, "parse_error": str(e)}
 
-    if cert_dict:
-        result["subject_alt_from_dict"] = cert_dict.get("subjectAltName", [])
+    result = {
+        "index": index,
+        "subject": _name_to_dict(cert.subject),
+        "issuer": _name_to_dict(cert.issuer),
+        "serial_number": format(cert.serial_number, "x"),
+        "not_before": cert.not_valid_before_utc.isoformat(),
+        "not_after": cert.not_valid_after_utc.isoformat(),
+        "expired": now > cert.not_valid_after_utc,
+        "not_yet_valid": now < cert.not_valid_before_utc,
+        "signature_algorithm": cert.signature_algorithm_oid._name,
+        "version": cert.version.value,
+    }
+
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        result["san"] = san.value.get_values_for_type(x509.DNSName)
+    except x509.ExtensionNotFound:
+        pass
+
+    try:
+        basic = cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        result["is_ca"] = basic.value.ca
+    except x509.ExtensionNotFound:
+        result["is_ca"] = False
+
+    if cert.signature_hash_algorithm:
+        result["fingerprint_sha256"] = cert.fingerprint(hashes.SHA256()).hex(":")
+
+    if index == 0:
+        result["role"] = "leaf"
+    elif result.get("is_ca"):
+        if result["subject"] == result["issuer"]:
+            result["role"] = "root"
+        else:
+            result["role"] = "intermediate"
+    else:
+        result["role"] = "intermediate"
 
     return result
 

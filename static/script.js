@@ -114,45 +114,78 @@ function renderDNS(module) {
 function renderTLS(module) {
     setStatus('tls', module.success);
     const body = document.getElementById('body-tls');
+    const d = module.data;
 
-    if (!module.success) {
-        body.innerHTML = `<p class="error-msg">${module.error}</p>`;
+    if (!module.success && !d) {
+        body.innerHTML = `<p class="error-msg">${escapeHtml(module.error)}</p>`;
         return;
     }
 
-    const d = module.data;
-    let html = '<table>';
+    let html = '';
 
-    if (d.valid !== undefined) {
-        html += `<tr><td>证书有效</td><td>${d.valid ? '✓ 有效' : '✗ 无效'}</td></tr>`;
-    }
-    if (d.subject) {
-        html += `<tr><td>主题</td><td>${formatObj(d.subject)}</td></tr>`;
-    }
-    if (d.issuer) {
-        html += `<tr><td>颁发者</td><td>${formatObj(d.issuer)}</td></tr>`;
-    }
-    if (d.not_before) {
-        html += `<tr><td>生效时间</td><td>${d.not_before}</td></tr>`;
-    }
-    if (d.not_after) {
-        html += `<tr><td>过期时间</td><td>${d.not_after}</td></tr>`;
-    }
-    if (d.signature_algorithm) {
-        html += `<tr><td>签名算法</td><td>${escapeHtml(d.signature_algorithm)}</td></tr>`;
-    }
-    if (d.san && d.san.length > 0) {
-        html += `<tr><td>SAN</td><td>${d.san.map(escapeHtml).join('<br>')}</td></tr>`;
-    }
-    if (d.fingerprint_sha256) {
-        html += `<tr><td>SHA256指纹</td><td style="word-break:break-all;font-family:monospace;font-size:0.75rem">${d.fingerprint_sha256}</td></tr>`;
-    }
-    if (d.validation_error) {
-        html += `<tr><td>错误</td><td class="error-msg">${escapeHtml(d.validation_error)}</td></tr>`;
+    if (!module.success) {
+        html += `<div class="tls-validity invalid">`;
+        html += `<span class="validity-icon">✗</span>`;
+        html += `<span class="validity-text">证书无效：${escapeHtml(module.error)}</span>`;
+        html += `</div>`;
+    } else {
+        html += `<div class="tls-validity valid">`;
+        html += `<span class="validity-icon">✓</span>`;
+        html += `<span class="validity-text">证书有效</span>`;
+        html += `</div>`;
     }
 
-    html += '</table>';
+    if (d && d.chain && d.chain.length > 0) {
+        html += `<p class="chain-info">证书链共 ${d.chain_length} 级</p>`;
+        for (const cert of d.chain) {
+            html += renderCertCard(cert);
+        }
+    }
+
     body.innerHTML = html;
+}
+
+function renderCertCard(cert) {
+    const roleLabels = { leaf: '叶子证书（服务器）', intermediate: '中间CA', root: '根CA' };
+    const roleLabel = roleLabels[cert.role] || `第 ${cert.index} 级`;
+    const isExpired = cert.expired;
+    const notYetValid = cert.not_yet_valid;
+
+    let statusClass = 'cert-ok';
+    let statusText = '有效';
+    if (isExpired) { statusClass = 'cert-expired'; statusText = '已过期'; }
+    else if (notYetValid) { statusClass = 'cert-expired'; statusText = '尚未生效'; }
+
+    let html = `<div class="cert-card ${statusClass}">`;
+    html += `<div class="cert-role">${escapeHtml(roleLabel)} <span class="cert-status-tag ${statusClass}">${statusText}</span></div>`;
+    html += '<table>';
+
+    if (cert.subject) {
+        html += `<tr><td>主题</td><td>${formatObj(cert.subject)}</td></tr>`;
+    }
+    if (cert.issuer) {
+        html += `<tr><td>颁发者</td><td>${formatObj(cert.issuer)}</td></tr>`;
+    }
+    html += `<tr><td>生效时间</td><td>${cert.not_before || '-'}</td></tr>`;
+    html += `<tr><td>过期时间</td><td>${cert.not_after || '-'}</td></tr>`;
+    if (cert.signature_algorithm) {
+        html += `<tr><td>签名算法</td><td>${escapeHtml(cert.signature_algorithm)}</td></tr>`;
+    }
+    if (cert.san && cert.san.length > 0) {
+        const sanDisplay = cert.san.length > 5
+            ? cert.san.slice(0, 5).map(escapeHtml).join(', ') + ` ... 等${cert.san.length}个`
+            : cert.san.map(escapeHtml).join(', ');
+        html += `<tr><td>SAN</td><td>${sanDisplay}</td></tr>`;
+    }
+    if (cert.fingerprint_sha256) {
+        html += `<tr><td>SHA256</td><td class="mono-small">${cert.fingerprint_sha256}</td></tr>`;
+    }
+    if (cert.serial_number) {
+        html += `<tr><td>序列号</td><td class="mono-small">${cert.serial_number}</td></tr>`;
+    }
+
+    html += '</table></div>';
+    return html;
 }
 
 function renderCookies(module) {
