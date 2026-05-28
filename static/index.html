@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SiteInsight - 网站分析工具</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>SiteInsight</h1>
+            <p class="subtitle">全方位网站信息分析工具</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="input-section">
+            <div class="input-group">
+                <input type="text" id="url-input" placeholder="输入目标网址，例如：www.example.com" autocomplete="off">
+                <button id="analyze-btn" onclick="startAnalysis()">开始分析</button>
+            </div>
+            <p class="hint">支持输入域名或完整URL，系统将自动补全协议前缀</p>
+        </section>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>正在分析中，请稍候...</p>
+        </div>
+
+        <div id="error-banner" class="error-banner hidden"></div>
+
+        <section id="results" class="results hidden">
+            <div class="result-grid">
+                <div class="card" id="card-dns">
+                    <div class="card-header">
+                        <h3>DNS 解析</h3>
+                        <span class="status-badge" id="status-dns"></span>
+                    </div>
+                    <div class="card-body" id="body-dns"></div>
+                </div>
+
+                <div class="card" id="card-tls">
+                    <div class="card-header">
+                        <h3>TLS 证书</h3>
+                        <span class="status-badge" id="status-tls"></span>
+                    </div>
+                    <div class="card-body" id="body-tls"></div>
+                </div>
+
+                <div class="card" id="card-cookies">
+                    <div class="card-header">
+                        <h3>Cookies</h3>
+                        <span class="status-badge" id="status-cookies"></span>
+                    </div>
+                    <div class="card-body" id="body-cookies"></div>
+                </div>
+
+                <div class="card" id="card-whois">
+                    <div class="card-header">
+                        <h3>WHOIS 信息</h3>
+                        <span class="status-badge" id="status-whois"></span>
+                    </div>
+                    <div class="card-body" id="body-whois"></div>
+                </div>
+
+                <div class="card" id="card-geoip">
+                    <div class="card-header">
+                        <h3>地理位置</h3>
+                        <span class="status-badge" id="status-geoip"></span>
+                    </div>
+                    <div class="card-body" id="body-geoip"></div>
+                </div>
+
+                <div class="card" id="card-performance">
+                    <div class="card-header">
+                        <h3>性能指标</h3>
+                        <span class="status-badge" id="status-performance"></span>
+                    </div>
+                    <div class="card-body" id="body-performance"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>SiteInsight &copy; 2026 — 网站分析工具</p>
+        </div>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
